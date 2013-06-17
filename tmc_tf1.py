@@ -1,40 +1,61 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4 par k3c, bibichouchou et pacome: rtmpdump -W, vérif programme externes, algo conversion 
+# TF1 TMC NT1 HD1 V0.9.4.2: rtmpdump -w -x \-W, check curl, algo conversion, optparse→argparse, logging, structure
 
-import subprocess, optparse, re, sys, shlex
+# args & log
+import argparse
+from time import localtime, strftime
+import logging
+
+import subprocess, re, sys, shlex
 import socket
 from urllib2 import urlopen
 import time, md5, random, urllib2, json
 import bs4 as BeautifulSoup
-import os                       # → os.remove
+import os                       # → os.rename
 from urlparse import urlparse
 
-listeUserAgents = [ 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
-                    'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
-                    'Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.',
-                    'Mozilla/5.0 (X11; U; Linux x86_64; en-us) AppleWebKit/528.5+ (KHTML, like Gecko, Safari/528.5+) midori',
-                    'Mozilla/5.0 (Windows NT 6.0) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/13.0.782.107 Safari/535.1',
-                    'Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en-us) AppleWebKit/312.1 (KHTML, like Gecko) Safari/312',
-                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.12 Safari/535.11',
-                    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.8 (KHTML, like Gecko) Chrome/17.0.940.0 Safari/535.8' ]
+# global var
+scriptName='tmc_tf1.py'
+scriptVersion='0.9.4.2'
+
+# programmes externes utilisés
+ffmpegEx='ffmpeg'               # ou avconv
+rtmpdumpEx='rtmpdump'
+curlEx='curl'
+
+# hash et size du player swf (valide au 05/2013)
+swfHash='0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705'
+swfSize=352043
+
+listeUserAgents = [ 
+    'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
+    'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
+    'Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.',
+    'Mozilla/5.0 (X11; U; Linux x86_64; en-us) AppleWebKit/528.5+ (KHTML, like Gecko, Safari/528.5+) midori',
+    'Mozilla/5.0 (Windows NT 6.0) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/13.0.782.107 Safari/535.1',
+    'Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en-us) AppleWebKit/312.1 (KHTML, like Gecko) Safari/312',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.12 Safari/535.11',
+    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.8 (KHTML, like Gecko) Chrome/17.0.940.0 Safari/535.8' ]
 
 WEBROOTWAT="http://www.wat.tv"
 wat_url="/web/"
 jsonVideosInfos=""
+
+# random user agent
 ua=random.choice(listeUserAgents)
-# swf players
-swfWatPlayerLite="www.wat.tv/images/v40/PlayerWat.swf" # fourni par JUL1EN094
-swfWatPlayerWat="www.wat.tv/images/v70/PlayerLite.swf" # trouvé sur le www.wat.tv
-# programmes externes utilisés
-ffmpegEx='ffmpeg'
-rtmpdumpEx='rtmpdump'
+
+# global logger
+log=logging.getLogger(__name__)
 
 def checkExternalProgram(prog, optArg='', expectedValue=''):
     """ Permet de vérifier la présence des programmes externes requis """
+    log.debug('→checkExternalProgram(%s, %s, %s)'%(prog, optArg, expectedValue))
     args=shlex.split('%s %s' % (prog, optArg))
     try:
-        process=subprocess.Popen(args,stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        process=subprocess.Popen(args,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
         stdout, stderr = process.communicate()
         if expectedValue == '':
             return True
@@ -44,7 +65,7 @@ def checkExternalProgram(prog, optArg='', expectedValue=''):
             else:
                 return False
     except OSError:
-        print 'Le programme %s n\'est pas présent sur votre système' % (prog)
+        log.error('Le programme %s n\'est pas présent sur votre système' % (prog))
         return False
 
 def get_soup(url, referer, ua):
@@ -53,6 +74,7 @@ def get_soup(url, referer, ua):
     req.add_header('User-Agent', ua)
     req.add_header('Referer', referer)
     soup = urllib2.urlopen(req).read()
+    log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
     return soup
 
 def get_wat(id, HDFlag):
@@ -78,31 +100,22 @@ def get_wat(id, HDFlag):
         timesec = "0"+timesec
     token = md5.new("9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564"+wat_url+str(id)+""+timesec).hexdigest()
     id_url1 = WEBROOTWAT+"/get"+wat_url+str(id)+"?token="+token+"/"+str(timesec)+"&country=FR&getURL=1"
+    log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
     return id_url1
 
-def main():
+def downloadWatVideo(videoUrl):
     """ recuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT)"""
-    # vérification de la présence de rtmpdump v2.4 ou v2.5
-    if not checkExternalProgram(rtmpdumpEx, '-help', 'v2.4'):
-        if not checkExternalProgram(rtmpdumpEx, '-help', 'v2.5'): # pas top...
-            print 'Ce script requiert %s v2.4 ou v2.5' % (rtmpdumpEx)
-            return
     # timeout en secondes
+    log.debug('→downloadWatVideo(%s)' %(videoUrl))
     socket.setdefaulttimeout(90)
-    usage   = "usage: python tmc_tf1.py     [options] <url de l'emission>"
-    parser  = optparse.OptionParser( usage = usage )
-    parser.add_option( "--nocolor",         action = 'store_true', default = False, help = 'desactive la couleur dans le terminal' )
-    parser.add_option( "-v", "--verbose",   action = "store_true", default = False, help = 'affiche les informations de debugage' )
-    ( options, args ) = parser.parse_args()
-    if( len( args ) > 2 or args[ 0 ] == "" ):
-        parser.print_help()
-        parser.exit( 1 )
     debut_id = ''
-    html = urllib2.urlopen(sys.argv[1]).read()
-    nom = sys.argv[1].split('/')[-1:][0]
+    html = urllib2.urlopen(videoUrl).read()
+    log.debug('html=%s' %(html))
+    nom = videoUrl.split('/')[-1:][0]
     no = nom.split('.')[-2:][0]
     soup = BeautifulSoup.BeautifulSoup(html)
-    site = urlparse(sys.argv[1]).netloc
+    log.debug('soup=%s' %(soup))
+    site = urlparse(videoUrl).netloc
     if 'tmc.tv' in site or 'tf1.fr' in site:
         debut_id = str(soup.find('div', attrs={'class' : 'unique' }))
     if 'nt1.tv' in site or 'hd1.tv' in site:
@@ -110,8 +123,8 @@ def main():
     id = [x.strip() for x in re.findall("mediaId :([^,]*)", debut_id)][0]
     referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
     jsonVideoInfos = get_soup(WEBROOTWAT+'/interface/contentv3/'+id, referer, ua)
-    videoInfos     = json.loads(jsonVideoInfos)
-
+    videoInfos = json.loads(jsonVideoInfos)
+    log.debug('videoInfos=%s' % (videoInfos))
     try:
         HD = videoInfos["media"]["files"][0]["hasHD"]
     except:
@@ -121,62 +134,123 @@ def main():
     ListOfIds = []
     for iPart in range(NumberOfParts):
         ListOfIds.append(videoInfos["media"]["files"][iPart]["id"])
-
+    log.debug('NumberOfParts=%s' % (NumberOfParts))
     for PartId in ListOfIds:
         id_url1 = get_wat(PartId, HD)
         req  = urllib2.Request(id_url1)
         req.add_header('User-Agent', ua)
         req.add_header('Referer', referer)
         data = urllib2.urlopen(req).read()
-        # print data
-        # print type(data)
+        log.debug('data=%s' % (data))
         if data[0:4] == 'http':
-            arguments = 'curl "%s" -C - -L -g -A "%s" -o "%s.mp4"' % (data, ua, no + "-" + str(PartId))
-            print arguments
-            process = subprocess.Popen(arguments, stdout=subprocess.PIPE, shell=True).communicate()[0]
-        if data[0:4] == 'rtmp':
-            if '.hd' in data:
-                data0 = re.search('rtmpte://(.*)hd', data).group(0)
-            if '.h264' in data:
-                data0 = re.search('rtmpte://(.*)h264', data).group(0)
-            data0 = data0.replace('rtmpte','rtmpe')
-            fName=str(no) + "-" + str(PartId) # nom du fichier final sans extension
-            fileName=fName+".mp4"             # nom du fichier final avec extension
-            # ffmpeg est-il disponible?
-            if not checkExternalProgram(ffmpegEx):
-                print "L'installation de ffmpeg sur votre système permettrait de corriger automatiquement le conteneur de la vidéo (flash→mp4)."
-                tmpFileName=fileName
-                ffmpegAvailable=False
+            if not checkExternalProgram(curlEx):
+                log.warning('Ce script requiert %s' % (curlEx))
             else:
-                tmpFileName=fName+".tmp.mp4"
-                ffmpegAvailable=True
-            rtmpCmd = '%s -e -r "%s" -c 443 -m 10 -W %s -o "%s"' % (rtmpdumpEx, data0, swfWatPlayerLite, tmpFileName)
-            print rtmpCmd
-            arguments = shlex.split( rtmpCmd )
-            # print arguments
-            cpt = 0 
-            while True:
-                p = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                stdout, stderr = p.communicate()
-                if p.returncode != 0:
-                    print "Erreur : le sous-process s\'est terminé avec (le code d\'erreur est " + str(p.returncode) + ")"
-                    if cpt > 5:
-                        break
-                    cpt += 1
-                    time.sleep(3) 
-                else:
-                    if ffmpegAvailable:
-                        # conversion ffmpeg tmpFileName → fileName (pour corriger le conteneur)
-                        ffmpegCmd='ffmpeg -i "%s" -acodec copy -vcodec copy "%s"' % (tmpFileName, fileName)
-                        arguments=shlex.split(ffmpegCmd)
-                        p=subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        stdout, stderr = p.communicate()
-                        if p.returncode != 0:
-                            print 'Erreur: la conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (p.returncode, tmpFileName)
+                arguments = '%s "%s" -C - -L -g -A "%s" -o "%s.mp4"' % (
+                    curlEx, data, ua, no + "-" + str(PartId))
+                log.info(arguments)
+                process = subprocess.Popen(arguments,
+                                           stdout=subprocess.PIPE,
+                                           shell=True).communicate()[0]
+            # no retry loop?
+        if data[0:4] == 'rtmp':
+            # vérification de la présence de rtmpdump v2.4 ou v2.5
+            if not (checkExternalProgram(rtmpdumpEx, '-help', 'v2.4') or 
+                    checkExternalProgram(rtmpdumpEx, '-help', 'v2.5')): # pas top
+                log.warning('Ce script requiert %s v2.4 ou v2.5' % (rtmpdumpEx))
+            else:
+                if '.hd' in data:
+                    data0 = re.search('rtmpte://(.*)hd', data).group(0)
+                if '.h264' in data:
+                    data0 = re.search('rtmpte://(.*)h264', data).group(0)
+                log.debug('data0=%s'%(data0))
+                data0 = data0.replace('rtmpte','rtmpe')
+                fName=str(no) + '-' + str(PartId) # nom du fichier sans extension
+                fileName=fName+'.mp4'             # nom du fichier avec extension
+                rtmpCmd = '%s -e -r "%s" -c 443 -m 10 -w %s -x %i -o "%s"' % (
+                    rtmpdumpEx, data0, swfHash, swfSize, fileName)
+                log.info(rtmpCmd)
+                arguments = shlex.split( rtmpCmd )
+                cpt = 0 
+                while True:
+                    p = subprocess.Popen(arguments,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE)
+                    stdout, stderr = p.communicate()
+                    if p.returncode != 0:
+                        log.error('Le sous-process s\'est terminé avec le code d\'erreur ' + str(p.returncode) + ')')
+                        if cpt > 5:
+                            break
+                        cpt += 1
+                        log.error('Essai de reprise...')
+                        time.sleep(3) 
+                    else:
+                        # ffmpeg est-il disponible?
+                        if not checkExternalProgram(ffmpegEx):
+                            log.info("L'installation de ffmpeg sur votre système permettrait de corriger automatiquement le conteneur de la vidéo (flash→mp4).")
                         else:
-                            # suppression du fichier temporaire
-                            os.remove(tmpFileName)
-                    break
+                            tmpFileName=fName+'.tmp.mp4'
+                            # conversion ffmpeg fileName → tmpFileName (pour corriger le conteneur)
+                            ffmpegCmd='%s -i "%s" -acodec copy -vcodec copy "%s"' % (
+                                ffmpegEx, fileName, tmpFileName)
+                            arguments=shlex.split(ffmpegCmd)
+                            p=subprocess.Popen(arguments,
+                                               stdout=subprocess.PIPE,
+                                               stderr=subprocess.PIPE)
+                            stdout, stderr = p.communicate()
+                            if p.returncode != 0:
+                                log.error('La conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (
+                                        p.returncode, fileName))
+                            else:
+                                # remplacement tmpFileName → fileName
+                                os.rename(tmpFileName, fileName)
+                        break
+
+def main():
+    """
+    Analyse les arguments et lance le téléchargement
+    """
+    parser=argparse.ArgumentParser(prog=scriptName,
+                                   description='Récuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT).',
+                                   version='%s v%s' % (scriptName, scriptVersion))
+    verbOrLog=parser.add_mutually_exclusive_group()
+    verbOrLog.add_argument('-V', '--verbose',
+                           help="affiche des messages",
+                           dest='verbose',
+                           action='store_true',
+                           default=False)
+    verbOrLog.add_argument('-l', '--log',
+                           help="logue les messages",
+                           dest='log',
+                           action='store_const',
+                           const='%s-%s.log' % (scriptName,
+                                                strftime("%Y%m%d%H%M%S",
+                                                         localtime())),
+                           metavar='FILE')
+    parser.add_argument('url',
+                        help='url de la page de la video',
+                        metavar='URL',
+                        nargs='?')
+    args=parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(format='%(levelname)s:\t%(asctime)s: %(message)s',
+                            datefmt='%H:%M:%S',
+                            level=logging.INFO)
+        log.info('verbose mode')
+    else:
+        if args.log:
+            logging.basicConfig(filename=args.log,
+                                format='%(levelname)s:\t%(asctime)s: %(message)s',
+                                datefmt='%H:%M:%S',
+                                level=logging.DEBUG)
+            log.info(args.log)
+        else:
+            logging.basicConfig(format='%(message)s',
+                                datefmt='%H:%M:%S',
+                                level=logging.WARNING)
+    if args.url:
+        log.info('url: %s' % (args.url))
+        downloadWatVideo(args.url)
 
 if __name__ == "__main__":
     main()
