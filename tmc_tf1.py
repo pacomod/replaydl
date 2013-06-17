@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.2 par k3c, bibichouchou et pacome: indent, conversion ffmpeg
+# TF1 TMC NT1 HD1 V0.9.3 par k3c, bibichouchou et pacome: test site avec urlparse
 
 import subprocess, optparse, re, sys, shlex
 import socket
@@ -8,6 +8,7 @@ from urllib2 import urlopen
 import time, md5, random, urllib2, json
 import bs4 as BeautifulSoup
 import os                       # → os.remove
+from urlparse import urlparse
 
 listeUserAgents = [ 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
                                                 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
@@ -73,9 +74,10 @@ def main():
     nom = sys.argv[1].split('/')[-1:][0]
     no = nom.split('.')[-2:][0]
     soup = BeautifulSoup.BeautifulSoup(html)
-    if 'tmc.tv' in str(soup) or 'tf1.fr' in str(soup):
+    site = urlparse(sys.argv[1]).netloc
+    if 'tmc.tv' in site or 'tf1.fr' in site:
         debut_id = str(soup.find('div', attrs={'class' : 'unique' }))
-    if 'nt1.tv' in str(soup) or 'hd1.tv' in str(soup):
+    if 'nt1.tv' in site or 'hd1.tv' in site:
         debut_id = str(soup.find('section', attrs={'class' : 'player-unique' }))
     id = [x.strip() for x in re.findall("mediaId :([^,]*)", debut_id)][0]
     referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
@@ -138,7 +140,6 @@ def main():
                         # suppression du fichier temporaire
                         os.remove(fName+'.t.mp4')
                     break
-
 
 if __name__ == "__main__":
     main()
