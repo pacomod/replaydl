@@ -1,10 +1,10 @@
 # -*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 version 0.6 par k3c, correction de 11gjm
+# TF1 TMC NT1 HD1 version 0.7 par k3c, correction de 11gjm, modif pour TF1 unforgettable
 import subprocess, optparse, re, sys, shlex
 import socket
 from urllib2 import urlopen
 import time, md5, random, urllib2
-import BeautifulSoup
+import bs4 as BeautifulSoup
 listeUserAgents = [ 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
                                                 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
                                                 'Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.',
@@ -69,8 +69,7 @@ def main():
         host = re.search('rtmpte://(.*)/ondemand', data).group(1)
         host = host.replace('rtmpte', 'rtmpe')
         data0 = re.search('rtmpte://(.*)h264', data).group(0)
-        cmds = 'rtmpdump -r "%s" -c 1935 -m 10 -w ebb7a6fbdc9021db95e2bd537d73fabb9717508f085bea50bde75f7a8e27698c -x 343642 -o "%s.mp4" " --resume"' % (data0, str(no)
-)
+        cmds = 'rtmpdump -r "%s" -c 443 -m 10 -w b23434cbed89c9eaf520373c4c6f26e1f7326896dee4b1719e8d9acda0c19e99 -x 343427  -o "%s.mp4" " --resume"' % (data0, str(no))
         f = open(str(no), 'w')
         f.write(cmds)
         f.close()
