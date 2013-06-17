@@ -10,6 +10,7 @@ import logging
 import base64
 import urllib2                  # → pas que urlopen (exceptions, etc.)
 import hashlib                  # → sha256sum
+import hmac
 import zlib
 import StringIO
 
@@ -17,6 +18,7 @@ import StringIO
 scriptName='getSwfInfo'
 scriptVersion='1.0'
 versionString='%s v%s' % (scriptName, scriptVersion)
+KEY = "Genuine Adobe Flash Player 001"
 
 # default/valid values
 validHash='0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705'
@@ -29,6 +31,7 @@ def computeSwfPlayerHash(swfPlayerUrl):
     """
     Essais → swf size & hash
     """
+    global KEY
     try:
         swfPlayer= urllib2.urlopen(swfPlayerUrl).read()
     except ValueError:
@@ -42,7 +45,7 @@ def computeSwfPlayerHash(swfPlayerUrl):
         return
 
     swfPlayerSize=len(swfPlayer)
-    swfPlayerHash=hashlib.sha224(swfPlayer).hexdigest()
+    swfPlayerHash=hashlib.sha256(swfPlayer).hexdigest()
     if type(swfPlayer) is str:
         swfData=StringIO.StringIO(swfPlayer)
     swfData.seek(0, 0)
@@ -50,9 +53,10 @@ def computeSwfPlayerHash(swfPlayerUrl):
     if magic != "CWS":
         log.error("Pas de CWS...")
     else:
-        unzPlayer="CWS" + swfData.read(5) + zlib.decompress(swfData.read())
+        unzPlayer="FWS" + swfData.read(5) + zlib.decompress(swfData.read())
         unzPlayerSize=len(unzPlayer)
-        sha256Player=hashlib.sha256(unzPlayer)
+        sha256Player = hmac.new(KEY, unzPlayer, hashlib.sha256) #.hexdigest()
+        # sha256Player=hashlib.sha256(unzPlayer)
         unzPlayerHash=sha256Player.hexdigest()
         # b64PlayerHash=base64.b64encode(unzPlayerHash.decode('hex'))
         b64PlayerHash=base64.urlsafe_b64encode(sha256Player.hexdigest().decode('hex'))
@@ -103,24 +107,19 @@ def main():
                             datefmt='%H:%M:%S',
                             level=logging.INFO)
         log.info('verbose mode')
-    else:
-        if args.log:
-            logging.basicConfig(filename=args.log,
-                                format='%(levelname)s:\t%(asctime)s: %(message)s',
-                                datefmt='%H:%M:%S',
-                                level=logging.DEBUG)
-            logging.info(args.log)
-        else:
-            logging.basicConfig(format='%(message)s',
-                                datefmt='%H:%M:%S',
-                                level=logging.INFO)
+    if args.log:
+        logging.basicConfig(filename=args.log,
+                            format='%(levelname)s:\t%(asctime)s: %(message)s',
+                            datefmt='%H:%M:%S',
+                            level=logging.DEBUG)
+        logging.info(args.log)
 
     if args.swfPlayerUrl:
         log.debug('swfPlayerUrl: %s' % (args.swfPlayerUrl))
         computeSwfPlayerHash(args.swfPlayerUrl)
 
     if args.displayValidHash:
-        log.info('*-*- Valid hash -*-*\n\tsize: %x\n\thash: %s\n\thlen: %i\n' % (
+        log.info('*-*- Valid hash -*-*\n\tsize: %i\n\thash: %s\n\thlen: %i\n' % (
                 validSize, validHash, len(validHash)))
         
 if __name__ == "__main__":
