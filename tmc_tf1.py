@@ -1,11 +1,13 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.1 k3c et bibichouchou: correction hash/size swf
+# TF1 TMC NT1 HD1 V0.9.2 par k3c, bibichouchou et pacome: indent, conversion ffmpeg
+
 import subprocess, optparse, re, sys, shlex
 import socket
 from urllib2 import urlopen
 import time, md5, random, urllib2, json
 import bs4 as BeautifulSoup
+import os                       # → os.remove
 
 listeUserAgents = [ 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
                                                 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
@@ -42,12 +44,10 @@ def get_wat(id, HDFlag):
             number, i = divmod(number, 36)
             base36 = alphabet[i] + base36
         return base36 or alphabet[0]
-
     if HDFlag:
         wat_url = "/webhd/"
     else:
         wat_url = "/web/"
-
     ts = base36encode(int(time.time())-60)
     timesec = hex(int(ts, 36))[2:]
     while(len(timesec)<8):
@@ -98,8 +98,8 @@ def main():
         req.add_header('User-Agent', ua)
         req.add_header('Referer', referer)
         data = urllib2.urlopen(req).read()
-        print data
-        print type(data)
+        # print data
+        # print type(data)
         if data[0:4] == 'http':
             arguments = 'curl "%s" -C - -L -g -A "%s" -o "%s.mp4"' % (data, ua, no + "-" + str(PartId))
             print arguments
@@ -110,23 +110,34 @@ def main():
             if '.h264' in data:
                 data0 = re.search('rtmpte://(.*)h264', data).group(0)
             data0 = data0.replace('rtmpte','rtmpe')
-            cmds = 'rtmpdump -e -r "%s" -c 443 -m 10 -w 0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705 -x 352043 -o "%s.mp4"' % (data0, str(no) + "-" + str(PartId))
+            fName=str(no) + "-" + str(PartId) # nom du fichier final sans extension
+            cmds = 'rtmpdump -e -r "%s" -c 443 -m 10 -w 0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705 -x 352043 -o "%s.t.mp4"' % (data0, fName)
             print cmds
             arguments = shlex.split( cmds )
-            print arguments
+            # print arguments
             cpt = 0 
             while True:
                 p = subprocess.Popen( arguments,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 stdout, stderr = p.communicate()
-            if p.returncode != 0:
-                print "Erreur : le sous-process s\'est terminé avec (le code d\'erreur est " + str(p.returncode) + ")"
-                if cpt > 5:
+                if p.returncode != 0:
+                    print "Erreur : le sous-process s\'est terminé avec (le code d\'erreur est " + str(p.returncode) + ")"
+                    if cpt > 5:
+                        break
+                    cpt += 1
+                    time.sleep(3) 
+                else:
+                    # conversion ffmpeg fName.t.mp4 → fName.mp4 (pour corriger le conteneur)
+                    cmdFfmpeg='ffmpeg -i "%s.t.mp4" -acodec copy -vcodec copy "%s.mp4"' % (fName, fName)
+                    arguments=shlex.split(cmdFfmpeg)
+                    p=subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    stdout, stderr = p.communicate()
+                    if p.returncode != 0:
+                        print 'Erreur: la conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s.t.mp4 est néanmois disponible' % (p.returncode, fName)
+                    else:
+                        # suppression du fichier temporaire
+                        os.remove(fName+'.t.mp4')
                     break
-                cpt += 1
-                time.sleep(3) 
-            else:
-                break
 
 
 if __name__ == "__main__":
