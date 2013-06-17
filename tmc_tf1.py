@@ -1,10 +1,10 @@
 # -*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 version 0.5 par k3c, correction de 11gjm
+# TF1 TMC NT1 HD1 version 0.6 par k3c, correction de 11gjm
 import subprocess, optparse, re, sys, shlex
 import socket
 from urllib2 import urlopen
 import time, md5, random, urllib2
-import bs4 as BeautifulSoup
+import BeautifulSoup
 listeUserAgents = [ 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
                                                 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
                                                 'Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.',
@@ -55,7 +55,7 @@ def main():
     if 'nt1.tv' in str(soup) or 'hd1.tv' in str(soup):
         debut_id = str(soup.find('section', attrs={'class' : 'player-unique' }))
     id = [x.strip() for x in re.findall("mediaId :([^,]*)", debut_id)][0]
-    id_url1 = get_wat('9064731')
+    id_url1 = get_wat(id)
     opener = urllib2.build_opener()
     opener.addheaders = [('User-agent', random.choice(listeUserAgents))]
     data = opener.open(id_url1).read()
