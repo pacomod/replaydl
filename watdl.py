@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.6: watdl.py --standard-definition (← pb vidéos tf1 HD)
+# TF1 TMC NT1 HD1 V0.9.4.7: boucle de reprise curl, effacement fichiers de travail, timeout →urlopen, User-Agents++, swfPlayer, watdl-YYYYmmddHHMMSS.log, port rtmp 443→1935
 
 # args & log
 import argparse
@@ -21,7 +21,7 @@ from urlparse import urlparse
 
 # global var
 scriptName='watdl.py'
-scriptVersion='0.9.4.6'
+scriptVersion='0.9.4.7'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -29,18 +29,25 @@ rtmpdumpEx='rtmpdump'
 curlEx='curl'
 
 # Player swf
-defaultSwfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
+#defaultSwfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
+defaultSwfPlayerUrl='http://www.wat.tv/images/v60/PlayerWat.swf'
 KEY = "Genuine Adobe Flash Player 001"
 
-listeUserAgents = [ 
-    'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
-    'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
+urlOpenTimeout = 30
+
+listeUserAgents = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:24.0) Gecko/20100101 Firefox/24.0',
+    'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0',
+    'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:23.0) Gecko/20131011 Firefox/23.0',
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:21.0) Gecko/20130331 Firefox/21.0',
     'Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.',
-    'Mozilla/5.0 (X11; U; Linux x86_64; en-us) AppleWebKit/528.5+ (KHTML, like Gecko, Safari/528.5+) midori',
-    'Mozilla/5.0 (Windows NT 6.0) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/13.0.782.107 Safari/535.1',
     'Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en-us) AppleWebKit/312.1 (KHTML, like Gecko) Safari/312',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.12 Safari/535.11',
-    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.8 (KHTML, like Gecko) Chrome/17.0.940.0 Safari/535.8' ]
+    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.8 (KHTML, like Gecko) Chrome/17.0.940.0 Safari/535.8',
+    'Mozilla/5.0 (Windows NT 6.0) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/13.0.782.107 Safari/535.1',
+    'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.186 Safari/535.1',
+    'Mozilla/5.0 (X11; U; Linux x86_64; en-us) AppleWebKit/528.5+ (KHTML, like Gecko, Safari/528.5+) midori',
+    'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.12 Safari/535.11' ]
 
 WEBROOTWAT="http://www.wat.tv"
 wat_url="/web/"
@@ -77,7 +84,7 @@ def get_soup(url, referer, ua):
     req  = urllib2.Request(url)
     req.add_header('User-Agent', ua)
     req.add_header('Referer', referer)
-    soup = urllib2.urlopen(req).read()
+    soup = urllib2.urlopen(req, None, urlOpenTimeout).read()
     log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
     return soup
 
@@ -107,7 +114,7 @@ def get_wat(id, HDFlag):
         wat_url + str(id) + "" + timesec).hexdigest()
     id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) + "?token=" + token +
     "/" + str(timesec) + "&country=FR&getURL=1")
-    log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
+    log.debug('←get_wat(%s, %s): %s' %(id, HDFlag, id_url1))
     return id_url1
 
 def swfPlayerHashAndSize(swfPlayerUrl):
@@ -117,7 +124,7 @@ def swfPlayerHashAndSize(swfPlayerUrl):
     """
     global KEY
     try:
-        swfPlayer= urllib2.urlopen(swfPlayerUrl).read()
+        swfPlayer= urllib2.urlopen(swfPlayerUrl, None, urlOpenTimeout).read()
     except (ValueError, urllib2.URLError):
         log.error('→swfPlayerHashAndSize(%s): Url invalide!' % (swfPlayerUrl))
         raise
@@ -153,7 +160,7 @@ def rtmpDownload(rtmpUrl,
     log.debug('→rtmpDownload(%s, %s, %s, %s, %s, %s, %s)' % (
             rtmpUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize,
             fileName, swfHash, swfSize))
-    rtmpCmd = '%s --resume --rtmp "%s" --port 443 --timeout 10' % (
+    rtmpCmd = '%s --resume --rtmp "%s" --port 1935 --timeout 10' % (
         rtmpdumpEx, rtmpUrl)    # initialisation de la commande
 
     if swfComputeHashSize:
@@ -182,14 +189,21 @@ def rtmpDownload(rtmpUrl,
                                 stderr=subprocess.STDOUT)
     (stdout, stderr) = rtmpProc.communicate()
     if rtmpProc.returncode == 1:   # sortie en erreur →
-        if swfComputeHashSize:     # on ré-essaye avec le calcul par rtmpdump
+        log.debug('rtmpdump output: %s' % (stdout))
+        if 'corrupt file!' in stdout: # ERROR: Last tag...corrupt file!
+            log.warning('Le fichier %s est corrompu!\n\t le téléchargement doit reprendre du début...' % (fileName))
+            os.remove(fileName)
             return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
-                                 False, fileName)
-        elif not swfForceRefresh: # on ré-essaye en forçant le recalcul
+                                swfComputeHashSize, fileName, swfHash, swfSize)
+        else:                      # ERROR: RTMP_ReadPacket...?
+            if swfComputeHashSize: # on ré-essaye avec le calcul par rtmpdump
+                return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                    False, fileName)
+            elif not swfForceRefresh: # on ré-essaye en forçant le recalcul
                 return rtmpDownload(rtmpUrl, swfPlayerUrl, True,
                                     False, fileName)
-        else:               # rtmpdump computation & refresh KO →
-            log.warning ('Veuillez ré-essayer plus tard (pb réseau ou algo?)')
+            else:               # rtmpdump computation & refresh KO →
+                log.warning ('Veuillez ré-essayer plus tard...')
     elif rtmpProc.returncode == 2:   # téléchargement incomplet →
         log.info('Téléchargement incomplet: nouvel essai dans 3s...')
         time.sleep(3)                # petite temporisation
@@ -211,12 +225,12 @@ def downloadWatVideo(videoUrl,
                      swfComputeHashSize,
                      standardDefinition):
     """ recuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT)"""
-    log.debug('→downloadWatVideo(%s, %s, %s, %s)' % (
-            videoUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize))
+    log.debug('→downloadWatVideo(%s, %s, %s, %s, %s)' % (
+            videoUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize, standardDefinition))
     # timeout en secondes
     socket.setdefaulttimeout(90)
     debut_id = ''
-    html = urllib2.urlopen(videoUrl).read()
+    html = urllib2.urlopen(videoUrl, None, urlOpenTimeout).read()
     # log.debug('html=%s' %(html))
     nom = videoUrl.split('/')[-1:][0]
     no = nom.split('.')[-2:][0]
@@ -247,22 +261,43 @@ def downloadWatVideo(videoUrl,
     log.debug('NumberOfParts=%s' % (NumberOfParts))
     for PartId in ListOfIds:
         id_url1 = get_wat(PartId, HD)
-        req  = urllib2.Request(id_url1)
+        req = urllib2.Request(id_url1)
         req.add_header('User-Agent', ua)
         req.add_header('Referer', referer)
-        data = urllib2.urlopen(req).read()
-        # log.debug('data=%s' % (data))
+        try:
+            log.debug('User-Agent: %s' % (ua))
+            log.debug('Referer: %s' % (referer))
+            resp = urllib2.urlopen(req, None, urlOpenTimeout)
+            data = resp.read()
+        except urllib2.HTTPError, error:
+            if not standardDefinition:
+                log.error('Impossible de récupérer la vidéo en HD. Veuillez ré-essayer avec l\'option --standard-definition')
+            else:
+                log.error('HTTP error avec User-Agent: %s\tReferer: %s' % (ua, referer))
+                
+            data = error.read()
+        log.debug('data=%s' % (data))
         if data[0:4] == 'http':
             if not checkExternalProgram(curlEx):
                 log.warning('Ce script requiert %s' % (curlEx))
             else:
-                arguments = '%s "%s" -C - -L -g -A "%s" -o "%s.mp4"' % (
+                curlCmd = '%s "%s" -C - -L -g -A "%s" -o "%s.mp4"' % (
                     curlEx, data, ua, no + "-" + str(PartId))
-                log.info(arguments)
-                process = subprocess.Popen(arguments,
-                                           stdout=subprocess.PIPE,
-                                           shell=True).communicate()[0]
-            # no retry loop?
+                log.info(curlCmd)
+                isDownloaded = False
+                while not isDownloaded:
+                    curlProc = subprocess.Popen(curlCmd,
+                                                stdout=subprocess.PIPE,
+                                                shell=True)
+                    (stdout, stderr) = curlProc.communicate()
+                    if curlProc.returncode == 0:
+                        isDownloaded = True
+                    else:
+                        log.debug('curl output:%s' % (stdout))
+                        if 'Cannot resume' in stdout:
+                            log.warning('Le fichier obtenu est complet ou corrompu')
+                            isDownloaded = True # pour sortir quand même...
+
         if data[0:4] == 'rtmp':
             # vérification de la présence de rtmpdump v2.4 ou v2.5
             if not (checkExternalProgram(rtmpdumpEx, '-help', 'v2.4') or 
@@ -293,10 +328,17 @@ def downloadWatVideo(videoUrl,
                                                       stderr=subprocess.STDOUT)
                         (stdout, stderr) = ffmpegProc.communicate()
                         if ffmpegProc.returncode != 0:
-                            log.error('La conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (
-                                    ffmpegProc.returncode, fileName))
+                            log.error('La conversion ffmpeg s\'est terminée en erreur.\nLe fichier %s est vraisemblablement illisible...' % (fileName))
+                            if not standardDefinition:
+                                log.error('Veuillez ré-essayer avec l\'option --standard-definition')
+                            try:
+                                os.remove(tmpFileName) # à effacer si il existe
+                            except:
+                                pass
                         else:
-                            log.debug('remplacement tmpFileName → fileName')
+                            log.debug('remplacement %s → %s' % (
+                                    tmpFileName, fileName))
+                            os.remove(fileName) # pour éviter les WindowsError
                             os.rename(tmpFileName, fileName)
                         log.info('%s est maintenant disponible!' % (fileName))
                 else:
@@ -320,7 +362,7 @@ def main():
                            help="logue les messages",
                            dest='log',
                            action='store_const',
-                           const='%s-%s.log' % (scriptName,
+                           const='%s-%s.log' % (re.sub('\.py', '', scriptName),
                                                 strftime("%Y%m%d%H%M%S",
                                                          localtime())),
                            metavar='FILE')
@@ -355,21 +397,19 @@ def main():
         logging.basicConfig(format='%(levelname)s:\t%(asctime)s: %(message)s',
                             datefmt='%H:%M:%S',
                             level=logging.INFO)
-        log.info('verbose mode')
     else:
         if args.log:
             logging.basicConfig(filename=args.log,
                                 format='%(levelname)s:\t%(asctime)s: %(message)s',
                                 datefmt='%H:%M:%S',
                                 level=logging.DEBUG)
-            log.info(args.log)
         else:
             logging.basicConfig(format='%(message)s',
                                 datefmt='%H:%M:%S',
                                 level=logging.WARNING)
     if args.url:
         for url in args.url:
-            log.info('url: %s' % (args.url))
+            log.info('Traitement de l\'url: %s' % (url))
             downloadWatVideo(url,
                              args.swfPlayerUrl,
                              args.swfForceRefresh,
