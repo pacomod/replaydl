@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.2: rtmpdump -w -x \-W, check curl, algo conversion, optparse→argparse, logging, structure
+# TF1 TMC NT1 HD1 V0.9.4.3: swfPlayerHashAndSize(), log
 
 # args & log
 import argparse
@@ -9,7 +9,11 @@ import logging
 
 import subprocess, re, sys, shlex
 import socket
-from urllib2 import urlopen
+import urllib2                  # → urlopen & exceptions
+import hashlib                  # → sha256sum
+import hmac
+import zlib
+import StringIO
 import time, md5, random, urllib2, json
 import bs4 as BeautifulSoup
 import os                       # → os.rename
@@ -17,16 +21,21 @@ from urlparse import urlparse
 
 # global var
 scriptName='tmc_tf1.py'
-scriptVersion='0.9.4.2'
+scriptVersion='0.9.4.3'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
 rtmpdumpEx='rtmpdump'
 curlEx='curl'
 
+# Player swf
+swfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
+KEY = "Genuine Adobe Flash Player 001"
+
 # hash et size du player swf (valide au 05/2013)
-swfHash='0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705'
-swfSize=352043
+swfHashValid='0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705'
+swfSizeValid=352043
+
 
 listeUserAgents = [ 
     'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
@@ -103,6 +112,37 @@ def get_wat(id, HDFlag):
     log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
     return id_url1
 
+def swfPlayerHashAndSize(swfPlayerUrl):
+    """
+    Calcule et renvoie le tuple  (hash, taille) du player swf
+    ← (swfHash, swfSize)
+    """
+    global KEY
+    try:
+        swfPlayer= urllib2.urlopen(swfPlayerUrl).read()
+    except (ValueError, urllib2.URLError):
+        log.error('→swfPlayerHashAndSize(%s): Url invalide!' % (swfPlayerUrl))
+        raise
+    except urllib2.HTTPError:
+        log.error('→swfPlayerHashAndSize(%s): Pb http!' % (swfPlayerUrl))
+        raise
+
+    swfPlayerHash=hashlib.sha256(swfPlayer).hexdigest()
+    if type(swfPlayer) is str:
+        swfData=StringIO.StringIO(swfPlayer)
+    swfData.seek(0, 0)
+    magic=swfData.read(3)
+    if magic != "CWS":
+        log.error("Pas de CWS...")
+        return False
+    else:
+        unzPlayer="FWS" + swfData.read(5) + zlib.decompress(swfData.read())
+        unzPlayerSize=len(unzPlayer)
+        unzPlayerHash = hmac.new(KEY, unzPlayer, hashlib.sha256).hexdigest()
+    log.debug('←computeSwfPlayerHash(%s):(%s, %s)' %(
+            swfPlayerUrl, unzPlayerSize, unzPlayerHash))
+    return (unzPlayerHash, unzPlayerSize)
+
 def downloadWatVideo(videoUrl):
     """ recuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT)"""
     # timeout en secondes
@@ -159,6 +199,13 @@ def downloadWatVideo(videoUrl):
                     checkExternalProgram(rtmpdumpEx, '-help', 'v2.5')): # pas top
                 log.warning('Ce script requiert %s v2.4 ou v2.5' % (rtmpdumpEx))
             else:
+                try:
+                    (swfHash, swfSize)=swfPlayerHashAndSize(swfPlayerUrl)
+                except:
+                    log.warning('Impossible de calculer dynamiquement le (hash, size) du player swf! Utilisation des valeurs par défaut.')
+                    swfHash=swfHashValid
+                    swfSize=swfSizeValid
+
                 if '.hd' in data:
                     data0 = re.search('rtmpte://(.*)hd', data).group(0)
                 if '.h264' in data:
@@ -189,8 +236,8 @@ def downloadWatVideo(videoUrl):
                         if not checkExternalProgram(ffmpegEx):
                             log.info("L'installation de ffmpeg sur votre système permettrait de corriger automatiquement le conteneur de la vidéo (flash→mp4).")
                         else:
+                            log.debug('conversion ffmpeg fileName → tmpFileName (pour corriger le conteneur)')
                             tmpFileName=fName+'.tmp.mp4'
-                            # conversion ffmpeg fileName → tmpFileName (pour corriger le conteneur)
                             ffmpegCmd='%s -i "%s" -acodec copy -vcodec copy "%s"' % (
                                 ffmpegEx, fileName, tmpFileName)
                             arguments=shlex.split(ffmpegCmd)
@@ -202,9 +249,10 @@ def downloadWatVideo(videoUrl):
                                 log.error('La conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (
                                         p.returncode, fileName))
                             else:
-                                # remplacement tmpFileName → fileName
+                                log.debug('remplacement tmpFileName → fileName')
                                 os.rename(tmpFileName, fileName)
                         break
+    log.debug('Fini!')
 
 def main():
     """
