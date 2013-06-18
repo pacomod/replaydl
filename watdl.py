@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.4: watdl.py -p swfPlayerUrl -f -c URL+, rtmpdump -W -X, rtmpDownload()
+# TF1 TMC NT1 HD1 V0.9.4.5: recollage de chaînes...
 
 # args & log
 import argparse
@@ -21,7 +21,7 @@ from urlparse import urlparse
 
 # global var
 scriptName='watdl.py'
-scriptVersion='0.9.4.4'
+scriptVersion='0.9.4.5'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -78,7 +78,7 @@ def get_soup(url, referer, ua):
     req.add_header('User-Agent', ua)
     req.add_header('Referer', referer)
     soup = urllib2.urlopen(req).read()
-    # log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
+    log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
     return soup
 
 def get_wat(id, HDFlag):
@@ -107,7 +107,7 @@ def get_wat(id, HDFlag):
         wat_url + str(id) + "" + timesec).hexdigest()
     id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) + "?token=" + token +
     "/" + str(timesec) + "&country=FR&getURL=1")
-    # log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
+    log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
     return id_url1
 
 def swfPlayerHashAndSize(swfPlayerUrl):
@@ -220,7 +220,7 @@ def downloadWatVideo(videoUrl,
     nom = videoUrl.split('/')[-1:][0]
     no = nom.split('.')[-2:][0]
     soup = BeautifulSoup.BeautifulSoup(html)
-    # log.debug('soup=%s' %(soup))
+    log.debug('soup=%s' %(soup))
     site = urlparse(videoUrl).netloc
     if 'tmc.tv' in site or 'tf1.fr' in site:
         debut_id = str(soup.find('div', attrs={'class' : 'unique' }))
@@ -230,7 +230,7 @@ def downloadWatVideo(videoUrl,
     referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
     jsonVideoInfos = get_soup(WEBROOTWAT+'/interface/contentv3/'+id, referer, ua)
     videoInfos = json.loads(jsonVideoInfos)
-    # log.debug('videoInfos=%s' % (videoInfos))
+    log.debug('videoInfos=%s' % (videoInfos))
     try:
         HD = videoInfos["media"]["files"][0]["hasHD"]
     except:
@@ -278,24 +278,18 @@ def downloadWatVideo(videoUrl,
                     log.info('Téléchargement terminé')
                     # ffmpeg est-il disponible?
                     if not checkExternalProgram(ffmpegEx):
-                        log.info("L'installation de ffmpeg sur votre système" +
-                                 " permettrait de corriger automatiquement" +
-                                 " le conteneur de la vidéo (flash→mp4).")
+                        log.info("L'installation de ffmpeg sur votre système permettrait de corriger automatiquement le conteneur de la vidéo (flash→mp4).")
                     else:
-                        log.info('conversion ffmpeg fileName → tmpFileName' +
-                                 ' (pour corriger le conteneur)')
+                        log.info('conversion ffmpeg fileName → tmpFileName (pour corriger le conteneur)')
                         tmpFileName = fName+'.tmp.mp4'
-                        ffmpegCmd = ('%s -i "%s" -acodec copy -vcodec' +
-                        ' copy "%s"') % (ffmpegEx, fileName, tmpFileName)
+                        ffmpegCmd = '%s -i "%s" -acodec copy -vcodec copy "%s"' % (ffmpegEx, fileName, tmpFileName)
                         ffmpegCall = shlex.split(ffmpegCmd)
                         ffmpegProc = subprocess.Popen(ffmpegCall,
                                                       stdout=subprocess.PIPE,
                                                       stderr=subprocess.STDOUT)
                         (stdout, stderr) = ffmpegProc.communicate()
                         if ffmpegProc.returncode != 0:
-                            log.error('La conversion ffmpeg s\'est terminée' +
-                                      ' avec le code d\'erreur %i.\nLe' +
-                                      ' fichier %s est néanmois disponible' % (
+                            log.error('La conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (
                                     ffmpegProc.returncode, fileName))
                         else:
                             log.debug('remplacement tmpFileName → fileName')
@@ -309,8 +303,7 @@ def main():
     Analyse les arguments et lance le téléchargement
     """
     parser=argparse.ArgumentParser(prog=scriptName,
-                                   description='Récuperation de vidéos sur' +
-                                   ' TF1/TMC/NT1/HD1 (donc WAT).',
+                                   description='Récuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT).',
                                    version='%s v%s' % (scriptName,
                                                        scriptVersion))
     verbOrLog=parser.add_mutually_exclusive_group()
@@ -328,15 +321,13 @@ def main():
                                                          localtime())),
                            metavar='FILE')
     parser.add_argument('-p', '--swf-player-url',
-                        help='url du player swf à utiliser (défaut= %s)' % (
-            defaultSwfPlayerUrl),
+                        help='url du player swf à utiliser (défaut= %s)' % (defaultSwfPlayerUrl),
                         dest='swfPlayerUrl',
                         default=defaultSwfPlayerUrl,
                         action='store',
                         metavar='URL')
     parser.add_argument('-f', '--swf-force-refresh',
-                        help='force la vérification du hash/size du player swf' +
-                        ' (met éventuellement à jour ~/.swfinfo)',
+                        help='force la vérification du hash/size du player swf (met éventuellement à jour ~/.swfinfo)',
                         dest='swfForceRefresh',
                         default=False,
                         action='store_true')
