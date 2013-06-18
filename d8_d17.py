@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-# D8 version 0.4 par k3c et Jul1en094: titre de la vidéo dans le nom de fichier
+# D8 version 0.5.1 par k3c et Jul1en094: titre décodé
 from urllib2 import urlopen
 from lxml import objectify
 import bs4 as BeautifulSoup
@@ -12,6 +12,7 @@ validFilenameChars = "-_.() %s%s" % (string.ascii_letters, string.digits)
 
 def removeDisallowedFilenameChars(filename):
     "Remove invalid filename characters" 
+    filename = filename.decode('ASCII', 'ignore')
     cleanedFilename = unicodedata.normalize('NFKD', filename).encode('ASCII', 'ignore')
     cleanedFilename = cleanedFilename.replace(' ', '_')
     return ''.join(c for c in cleanedFilename if c in validFilenameChars)
@@ -53,3 +54,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
