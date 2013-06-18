@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.5: recollage de chaînes...
+# TF1 TMC NT1 HD1 V0.9.4.6: watdl.py --standard-definition (← pb vidéos tf1 HD)
 
 # args & log
 import argparse
@@ -21,7 +21,7 @@ from urlparse import urlparse
 
 # global var
 scriptName='watdl.py'
-scriptVersion='0.9.4.5'
+scriptVersion='0.9.4.6'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -208,7 +208,8 @@ def rtmpDownload(rtmpUrl,
 def downloadWatVideo(videoUrl,
                      swfPlayerUrl,
                      swfForceRefresh,
-                     swfComputeHashSize):
+                     swfComputeHashSize,
+                     standardDefinition):
     """ recuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT)"""
     log.debug('→downloadWatVideo(%s, %s, %s, %s)' % (
             videoUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize))
@@ -231,9 +232,12 @@ def downloadWatVideo(videoUrl,
     jsonVideoInfos = get_soup(WEBROOTWAT+'/interface/contentv3/'+id, referer, ua)
     videoInfos = json.loads(jsonVideoInfos)
     log.debug('videoInfos=%s' % (videoInfos))
-    try:
-        HD = videoInfos["media"]["files"][0]["hasHD"]
-    except:
+    if not standardDefinition:
+        try:
+            HD = videoInfos["media"]["files"][0]["hasHD"]
+        except:
+            HD = False
+    else:
         HD = False
 
     NumberOfParts = len(videoInfos["media"]["files"])
@@ -336,6 +340,11 @@ def main():
                         dest='swfComputeHashSize',
                         default=False,
                         action='store_true')
+    parser.add_argument('-s', '--standard-definition',
+                        help='ne recherche pas de version Haute-Définition',
+                        dest='standardDefinition',
+                        default=False,
+                        action='store_true')
     parser.add_argument('url',
                         help='url de la page de la video',
                         metavar='URL',
@@ -364,7 +373,8 @@ def main():
             downloadWatVideo(url,
                              args.swfPlayerUrl,
                              args.swfForceRefresh,
-                             args.swfComputeHashSize)
+                             args.swfComputeHashSize,
+                             args.standardDefinition)
 
 if __name__ == "__main__":
     main()
