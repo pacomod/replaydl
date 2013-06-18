@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.3: tmc_tf1.py → watdl.py, \log
+# TF1 TMC NT1 HD1 V0.9.4.4: watdl.py -p swfPlayerUrl -f -c URL+, rtmpdump -W -X, rtmpDownload()
 
 # args & log
 import argparse
@@ -20,8 +20,8 @@ import os                       # → os.rename
 from urlparse import urlparse
 
 # global var
-scriptName='tmc_tf1.py'
-scriptVersion='0.9.4.3'
+scriptName='watdl.py'
+scriptVersion='0.9.4.4'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -29,13 +29,8 @@ rtmpdumpEx='rtmpdump'
 curlEx='curl'
 
 # Player swf
-swfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
+defaultSwfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
 KEY = "Genuine Adobe Flash Player 001"
-
-# hash et size du player swf (valide au 05/2013)
-swfHashValid='0818931e9bfa764b9c33e42de6d06f924ac7fc244d0d4941019b9cdfe8706705'
-swfSizeValid=352043
-
 
 listeUserAgents = [ 
     'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_5; fr-fr) AppleWebKit/525.18 (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
@@ -83,7 +78,7 @@ def get_soup(url, referer, ua):
     req.add_header('User-Agent', ua)
     req.add_header('Referer', referer)
     soup = urllib2.urlopen(req).read()
-    log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
+    # log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
     return soup
 
 def get_wat(id, HDFlag):
@@ -107,14 +102,17 @@ def get_wat(id, HDFlag):
     timesec = hex(int(ts, 36))[2:]
     while(len(timesec)<8):
         timesec = "0"+timesec
-    token = md5.new("9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564"+wat_url+str(id)+""+timesec).hexdigest()
-    id_url1 = WEBROOTWAT+"/get"+wat_url+str(id)+"?token="+token+"/"+str(timesec)+"&country=FR&getURL=1"
-    log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
+    token = md5.new(
+        "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564" +
+        wat_url + str(id) + "" + timesec).hexdigest()
+    id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) + "?token=" + token +
+    "/" + str(timesec) + "&country=FR&getURL=1")
+    # log.debug('←get_wat(%s, %s):%s' %(id, HDFlag, id_url1))
     return id_url1
 
 def swfPlayerHashAndSize(swfPlayerUrl):
     """
-    Calcule et renvoie le tuple  (hash, taille) du player swf
+    Calcule et renvoie le tuple (hash, taille) du player swf
     ← (swfHash, swfSize)
     """
     global KEY
@@ -134,27 +132,95 @@ def swfPlayerHashAndSize(swfPlayerUrl):
     magic=swfData.read(3)
     if magic != "CWS":
         log.error("Pas de CWS...")
-        return False
+        raise ValueError('NoCWS')
     else:
         unzPlayer="FWS" + swfData.read(5) + zlib.decompress(swfData.read())
         unzPlayerSize=len(unzPlayer)
         unzPlayerHash = hmac.new(KEY, unzPlayer, hashlib.sha256).hexdigest()
     log.debug('←computeSwfPlayerHash(%s):(%s, %s)' %(
-            swfPlayerUrl, unzPlayerSize, unzPlayerHash))
+            swfPlayerUrl, unzPlayerHash, unzPlayerSize))
     return (unzPlayerHash, unzPlayerSize)
 
-def downloadWatVideo(videoUrl):
+def rtmpDownload(rtmpUrl,
+                 swfPlayerUrl,
+                 swfForceRefresh,
+                 swfComputeHashSize,
+                 fileName,
+                 swfHash=None,
+                 swfSize=None):
+    """ Appel de rtmpdump avec traitement des options et reprise (récursif)
+    """
+    log.debug('→rtmpDownload(%s, %s, %s, %s, %s, %s, %s)' % (
+            rtmpUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize,
+            fileName, swfHash, swfSize))
+    rtmpCmd = '%s --resume --rtmp "%s" --port 443 --timeout 10' % (
+        rtmpdumpEx, rtmpUrl)    # initialisation de la commande
+
+    if swfComputeHashSize:
+        if not swfHash and not swfSize: # pour ne pas recalculer en récursion
+            try:
+                (swfHash, swfSize)=swfPlayerHashAndSize(swfPlayerUrl)
+            except:
+                log.warning('Impossible de calculer le hash/size du player swf!')
+                log.info('calcul du hash/size par %s' % (rtmpdumpEx))
+                return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                    False, fileName)
+            if swfForceRefresh:
+                log.warning('pas encore codé!')
+                # et je ne sais pas si ça le sera... ;)
+            rtmpCmd += ' --swfhash %s --swfsize %i' % (swfHash, swfSize)
+    else:
+        if swfForceRefresh:
+            rtmpCmd += ' --swfVfy %s --swfAge 0' % (swfPlayerUrl)
+        else:
+            rtmpCmd += ' --swfVfy %s' % (swfPlayerUrl)
+    rtmpCmd += ' -o "%s"' % (fileName)
+    log.info(rtmpCmd)
+    rtmpCall = shlex.split(rtmpCmd)
+    rtmpProc = subprocess.Popen(rtmpCall,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+    (stdout, stderr) = rtmpProc.communicate()
+    if rtmpProc.returncode == 1:   # sortie en erreur →
+        if swfComputeHashSize:     # on ré-essaye avec le calcul par rtmpdump
+            return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                 False, fileName)
+        elif not swfForceRefresh: # on ré-essaye en forçant le recalcul
+                return rtmpDownload(rtmpUrl, swfPlayerUrl, True,
+                                    False, fileName)
+        else:               # rtmpdump computation & refresh KO →
+            log.warning ('Veuillez ré-essayer plus tard (pb réseau ou algo?)')
+    elif rtmpProc.returncode == 2:   # téléchargement incomplet →
+        log.info('Téléchargement incomplet: nouvel essai dans 3s...')
+        time.sleep(3)                # petite temporisation
+        if swfComputeHashSize:       # pas la peine de les recalculer
+            return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                swfComputeHashSize, fileName, swfHash, swfSize)
+        elif swfForceRefresh:   # pas la peine de le refaire
+            return rtmpDownload(rtmpUrl, swfPlayerUrl, False,
+                                swfComputeHashSize , fileName)
+        else:                   # on rappelle avec les mêmes options
+            return rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                swfComputeHashSize, fileName, swfHash, swfSize)
+    else:
+        return rtmpProc.returncode # = 0
+
+def downloadWatVideo(videoUrl,
+                     swfPlayerUrl,
+                     swfForceRefresh,
+                     swfComputeHashSize):
     """ recuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT)"""
+    log.debug('→downloadWatVideo(%s, %s, %s, %s)' % (
+            videoUrl, swfPlayerUrl, swfForceRefresh, swfComputeHashSize))
     # timeout en secondes
-    log.debug('→downloadWatVideo(%s)' %(videoUrl))
     socket.setdefaulttimeout(90)
     debut_id = ''
     html = urllib2.urlopen(videoUrl).read()
-    log.debug('html=%s' %(html))
+    # log.debug('html=%s' %(html))
     nom = videoUrl.split('/')[-1:][0]
     no = nom.split('.')[-2:][0]
     soup = BeautifulSoup.BeautifulSoup(html)
-    log.debug('soup=%s' %(soup))
+    # log.debug('soup=%s' %(soup))
     site = urlparse(videoUrl).netloc
     if 'tmc.tv' in site or 'tf1.fr' in site:
         debut_id = str(soup.find('div', attrs={'class' : 'unique' }))
@@ -164,7 +230,7 @@ def downloadWatVideo(videoUrl):
     referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
     jsonVideoInfos = get_soup(WEBROOTWAT+'/interface/contentv3/'+id, referer, ua)
     videoInfos = json.loads(jsonVideoInfos)
-    log.debug('videoInfos=%s' % (videoInfos))
+    # log.debug('videoInfos=%s' % (videoInfos))
     try:
         HD = videoInfos["media"]["files"][0]["hasHD"]
     except:
@@ -181,7 +247,7 @@ def downloadWatVideo(videoUrl):
         req.add_header('User-Agent', ua)
         req.add_header('Referer', referer)
         data = urllib2.urlopen(req).read()
-        log.debug('data=%s' % (data))
+        # log.debug('data=%s' % (data))
         if data[0:4] == 'http':
             if not checkExternalProgram(curlEx):
                 log.warning('Ce script requiert %s' % (curlEx))
@@ -199,68 +265,54 @@ def downloadWatVideo(videoUrl):
                     checkExternalProgram(rtmpdumpEx, '-help', 'v2.5')): # pas top
                 log.warning('Ce script requiert %s v2.4 ou v2.5' % (rtmpdumpEx))
             else:
-                try:
-                    (swfHash, swfSize)=swfPlayerHashAndSize(swfPlayerUrl)
-                except:
-                    log.warning('Impossible de calculer dynamiquement le (hash, size) du player swf! Utilisation des valeurs par défaut.')
-                    swfHash=swfHashValid
-                    swfSize=swfSizeValid
-
                 if '.hd' in data:
-                    data0 = re.search('rtmpte://(.*)hd', data).group(0)
+                    rtmpUrl = re.search('rtmpte://(.*)hd', data).group(0)
                 if '.h264' in data:
-                    data0 = re.search('rtmpte://(.*)h264', data).group(0)
-                log.debug('data0=%s'%(data0))
-                data0 = data0.replace('rtmpte','rtmpe')
+                    rtmpUrl = re.search('rtmpte://(.*)h264', data).group(0)
+                # log.debug('rtmpUrl=%s'%(rtmpUrl))
+                rtmpUrl = rtmpUrl.replace('rtmpte','rtmpe')
                 fName=str(no) + '-' + str(PartId) # nom du fichier sans extension
                 fileName=fName+'.mp4'             # nom du fichier avec extension
-                rtmpCmd = '%s -e -r "%s" -c 443 -m 10 -w %s -x %i -o "%s"' % (
-                    rtmpdumpEx, data0, swfHash, swfSize, fileName)
-                log.info(rtmpCmd)
-                arguments = shlex.split( rtmpCmd )
-                cpt = 0 
-                while True:
-                    p = subprocess.Popen(arguments,
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE)
-                    stdout, stderr = p.communicate()
-                    if p.returncode != 0:
-                        log.error('Le sous-process s\'est terminé avec le code d\'erreur ' + str(p.returncode) + ')')
-                        if cpt > 5:
-                            break
-                        cpt += 1
-                        log.error('Essai de reprise...')
-                        time.sleep(3) 
+                if rtmpDownload(rtmpUrl, swfPlayerUrl, swfForceRefresh,
+                                swfComputeHashSize, fileName) == 0:
+                    log.info('Téléchargement terminé')
+                    # ffmpeg est-il disponible?
+                    if not checkExternalProgram(ffmpegEx):
+                        log.info("L'installation de ffmpeg sur votre système" +
+                                 " permettrait de corriger automatiquement" +
+                                 " le conteneur de la vidéo (flash→mp4).")
                     else:
-                        # ffmpeg est-il disponible?
-                        if not checkExternalProgram(ffmpegEx):
-                            log.info("L'installation de ffmpeg sur votre système permettrait de corriger automatiquement le conteneur de la vidéo (flash→mp4).")
+                        log.info('conversion ffmpeg fileName → tmpFileName' +
+                                 ' (pour corriger le conteneur)')
+                        tmpFileName = fName+'.tmp.mp4'
+                        ffmpegCmd = ('%s -i "%s" -acodec copy -vcodec' +
+                        ' copy "%s"') % (ffmpegEx, fileName, tmpFileName)
+                        ffmpegCall = shlex.split(ffmpegCmd)
+                        ffmpegProc = subprocess.Popen(ffmpegCall,
+                                                      stdout=subprocess.PIPE,
+                                                      stderr=subprocess.STDOUT)
+                        (stdout, stderr) = ffmpegProc.communicate()
+                        if ffmpegProc.returncode != 0:
+                            log.error('La conversion ffmpeg s\'est terminée' +
+                                      ' avec le code d\'erreur %i.\nLe' +
+                                      ' fichier %s est néanmois disponible' % (
+                                    ffmpegProc.returncode, fileName))
                         else:
-                            log.debug('conversion ffmpeg fileName → tmpFileName (pour corriger le conteneur)')
-                            tmpFileName=fName+'.tmp.mp4'
-                            ffmpegCmd='%s -i "%s" -acodec copy -vcodec copy "%s"' % (
-                                ffmpegEx, fileName, tmpFileName)
-                            arguments=shlex.split(ffmpegCmd)
-                            p=subprocess.Popen(arguments,
-                                               stdout=subprocess.PIPE,
-                                               stderr=subprocess.PIPE)
-                            stdout, stderr = p.communicate()
-                            if p.returncode != 0:
-                                log.error('La conversion ffmpeg s\'est terminée avec le code d\'erreur %i.\nLe fichier %s est néanmois disponible' % (
-                                        p.returncode, fileName))
-                            else:
-                                log.debug('remplacement tmpFileName → fileName')
-                                os.rename(tmpFileName, fileName)
-                        break
-    log.debug('Fini!')
+                            log.debug('remplacement tmpFileName → fileName')
+                            os.rename(tmpFileName, fileName)
+                        log.info('%s est maintenant disponible!' % (fileName))
+                else:
+                    log.info('Problème réseau ou algo?')
 
 def main():
     """
     Analyse les arguments et lance le téléchargement
     """
     parser=argparse.ArgumentParser(prog=scriptName,
-                                   description='Récuperation de vidéos sur TF1/TMC/NT1/HD1 (donc WAT).',
-                                   version='%s v%s' % (scriptName, scriptVersion))
+                                   description='Récuperation de vidéos sur' +
+                                   ' TF1/TMC/NT1/HD1 (donc WAT).',
+                                   version='%s v%s' % (scriptName,
+                                                       scriptVersion))
     verbOrLog=parser.add_mutually_exclusive_group()
     verbOrLog.add_argument('-V', '--verbose',
                            help="affiche des messages",
@@ -275,11 +327,30 @@ def main():
                                                 strftime("%Y%m%d%H%M%S",
                                                          localtime())),
                            metavar='FILE')
+    parser.add_argument('-p', '--swf-player-url',
+                        help='url du player swf à utiliser (défaut= %s)' % (
+            defaultSwfPlayerUrl),
+                        dest='swfPlayerUrl',
+                        default=defaultSwfPlayerUrl,
+                        action='store',
+                        metavar='URL')
+    parser.add_argument('-f', '--swf-force-refresh',
+                        help='force la vérification du hash/size du player swf' +
+                        ' (met éventuellement à jour ~/.swfinfo)',
+                        dest='swfForceRefresh',
+                        default=False,
+                        action='store_true')
+    parser.add_argument('-c', '--swf-compute-hash-size',
+                        help='calcul du hash/size par le script',
+                        dest='swfComputeHashSize',
+                        default=False,
+                        action='store_true')
     parser.add_argument('url',
                         help='url de la page de la video',
                         metavar='URL',
-                        nargs='?')
+                        nargs='+')
     args=parser.parse_args()
+
     if args.verbose:
         logging.basicConfig(format='%(levelname)s:\t%(asctime)s: %(message)s',
                             datefmt='%H:%M:%S',
@@ -297,8 +368,12 @@ def main():
                                 datefmt='%H:%M:%S',
                                 level=logging.WARNING)
     if args.url:
-        log.info('url: %s' % (args.url))
-        downloadWatVideo(args.url)
+        for url in args.url:
+            log.info('url: %s' % (args.url))
+            downloadWatVideo(url,
+                             args.swfPlayerUrl,
+                             args.swfForceRefresh,
+                             args.swfComputeHashSize)
 
 if __name__ == "__main__":
     main()
