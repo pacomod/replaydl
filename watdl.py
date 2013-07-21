@@ -1,6 +1,8 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
-# TF1 TMC NT1 HD1 V0.9.4.7: boucle de reprise curl, effacement fichiers de travail, timeout →urlopen, User-Agents++, swfPlayer, watdl-YYYYmmddHHMMSS.log, port rtmp 443→1935
+# TF1 TMC NT1 HD1
+# V0.9.4.8: modification du referer, redirection de l'url initiale, modification de get_wat
+# V0.9.4.7: boucle de reprise curl, effacement fichiers de travail, timeout →urlopen, User-Agents++, swfPlayer, watdl-YYYYmmddHHMMSS.log, port rtmp 443→1935
 
 # args & log
 import argparse
@@ -14,14 +16,14 @@ import hashlib                  # → sha256sum
 import hmac
 import zlib
 import StringIO
-import time, md5, random, urllib2, json
+import time, md5, random, json
 import bs4 as BeautifulSoup
 import os                       # → os.rename
-from urlparse import urlparse
+from urlparse import urlparse, parse_qs
 
 # global var
 scriptName='watdl.py'
-scriptVersion='0.9.4.7'
+scriptVersion='0.9.4.8'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -29,13 +31,15 @@ rtmpdumpEx='rtmpdump'
 curlEx='curl'
 
 # Player swf
-#defaultSwfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
-defaultSwfPlayerUrl='http://www.wat.tv/images/v60/PlayerWat.swf'
+defaultSwfPlayerUrl='http://www.wat.tv/images/v40/PlayerWat.swf'
+#defaultSwfPlayerUrl='http://www.wat.tv/images/v60/PlayerWat.swf'
 KEY = "Genuine Adobe Flash Player 001"
 
 urlOpenTimeout = 30
 
 listeUserAgents = [
+    'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:22.0) Gecko/20100101 Firefox/22.0' ] #,
+listeUserAgents2=[
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:24.0) Gecko/20100101 Firefox/24.0',
     'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0',
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:23.0) Gecko/20131011 Firefox/23.0',
@@ -88,7 +92,7 @@ def get_soup(url, referer, ua):
     log.debug('←get_soup(%s, %s, %s): %s' % (url, referer, ua, soup))
     return soup
 
-def get_wat(id, HDFlag):
+def get_wat(id, HDFlag, referUrl, sitepage):
     """la fonction qui permet de retrouver une video sur wat"""
     def base36encode(number):
         if not isinstance(number, (int, long)):
@@ -105,16 +109,46 @@ def get_wat(id, HDFlag):
         wat_url = "/webhd/"
     else:
         wat_url = "/web/"
-    ts = base36encode(int(time.time())-60)
+    # pouet-pouet
+    # ts = base36encode(int(time.time())-60)
+    referArgs=parse_qs(urlparse(referUrl).query)
+    ts=referArgs['ts'][0]
+    # pouet-pouet
     timesec = hex(int(ts, 36))[2:]
     while(len(timesec)<8):
         timesec = "0"+timesec
     token = md5.new(
         "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564" +
-        wat_url + str(id) + "" + timesec).hexdigest()
-    id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) + "?token=" + token +
-    "/" + str(timesec) + "&country=FR&getURL=1")
-    log.debug('←get_wat(%s, %s): %s' %(id, HDFlag, id_url1))
+        wat_url + str(id) + timesec).hexdigest()
+    # token = md5.new(
+    #     "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564" +
+    #     wat_url + str(id) + "" + timesec).hexdigest()
+    # id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) + "?token=" + token +
+    # "/" + str(timesec) + "&country=FR&getURL=1")
+    # tagada
+    # referArgs=parse_qs(urlparse(referUrl).query)
+    id_url1 = (WEBROOTWAT + "/get" + wat_url + str(id) +
+               "?token=" + token +
+               "/" + str(timesec) +
+               '&domain=' + referArgs['referer'][0] +
+               '&domain2=null' + # referer2?
+               '&refererURL=' + urllib2.quote(referArgs['refererURL'][0], safe='') +
+               '&revision=' + referArgs['revision'][0] +
+               '&synd=0' +      # ?
+               '&helios=1' +    # ?
+               '&context=' + referArgs['context'][0] +
+               '&pub=5' +       # ?
+               '&country=FR' +
+               '&sitepage=' + sitepage + # referArgs['oasTag'][0] +
+               '&nolog=seen' +  # ?
+               '&lieu=' + referArgs['referer'][0].split('.')[1] +
+               '&playerContext=CONTEXT_' + referArgs['referer'][0].split('.')[1].upper() +
+               '&getURL=1' +    # ?
+               '&version=LNX%2011,2,202,291' # → automatisation?
+               )
+    #tagada
+    log.debug('←get_wat(%s, %s, %s, %s): %s' % (
+            id, HDFlag, referUrl, sitepage, id_url1))
     return id_url1
 
 def swfPlayerHashAndSize(swfPlayerUrl):
@@ -242,7 +276,28 @@ def downloadWatVideo(videoUrl,
     if 'nt1.tv' in site or 'hd1.tv' in site:
         debut_id = str(soup.find('section', attrs={'class' : 'player-unique' }))
     id = [x.strip() for x in re.findall("mediaId :([^,]*)", debut_id)][0]
-    referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
+    #referer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
+
+    # tsoin-tsoin
+    urlReferer = [x.strip() for x in re.findall('url : "(.*?)"', debut_id)][0]
+    class MyHTTPRedirectHandler(urllib2.HTTPRedirectHandler):
+        def http_error_302(self, req, fp, code, msg, headers):
+            log.debug('redirection(%s, %s, %s)' % ( code, msg, headers))
+            return headers['Location']
+        http_error_301 = http_error_303 = http_error_307 = http_error_302
+
+    openr=urllib2.build_opener(MyHTTPRedirectHandler)
+    urllib2.install_opener(openr)
+    openr.addheaders=[('User-Agent', ua)]
+    reqst=urllib2.Request(urlReferer)
+    reqst.add_header("Referer", videoUrl)
+    hiddenRef=openr.open(reqst)
+    log.debug('on récupère:  %s' % (hiddenRef))
+    referer=WEBROOTWAT +  hiddenRef
+    # jsonVideoInfos = get_soup(WEBROOTWAT + '/interface/contentv3/' + id,
+    #                           WEBROOTWAT +  hiddenRef, ua)
+    # tsoin-tsoin
+
     jsonVideoInfos = get_soup(WEBROOTWAT+'/interface/contentv3/'+id, referer, ua)
     videoInfos = json.loads(jsonVideoInfos)
     log.debug('videoInfos=%s' % (videoInfos))
@@ -259,8 +314,13 @@ def downloadWatVideo(videoUrl,
     for iPart in range(NumberOfParts):
         ListOfIds.append(videoInfos["media"]["files"][iPart]["id"])
     log.debug('NumberOfParts=%s' % (NumberOfParts))
+    sitepage=urllib2.quote(
+        re.search("var sitepage='(.*)';", 
+                  str(soup.find('script',
+                                attrs={'id' : 'scriptPub'}))).group(1),
+        safe='')
     for PartId in ListOfIds:
-        id_url1 = get_wat(PartId, HD)
+        id_url1 = get_wat(PartId, HD, referer, sitepage)
         req = urllib2.Request(id_url1)
         req.add_header('User-Agent', ua)
         req.add_header('Referer', referer)
