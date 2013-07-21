@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # os and lib modules
 # cherie25 et nrj  v 0.3 k3c
