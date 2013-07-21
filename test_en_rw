@@ -1,0 +1,1 @@
+#the real way to concat two strings in Python is ('%s%s') % (s1, s2,)
