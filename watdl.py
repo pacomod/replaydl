@@ -1,8 +1,8 @@
 #!/usr/bin/python
 #-*- coding:utf-8 -*-
 # TF1 TMC NT1 HD1
+# V0.9.4.9: modification de la base de calcul du token
 # V0.9.4.8: modification du referer, redirection de l'url initiale, modification de get_wat
-# V0.9.4.7: boucle de reprise curl, effacement fichiers de travail, timeout →urlopen, User-Agents++, swfPlayer, watdl-YYYYmmddHHMMSS.log, port rtmp 443→1935
 
 # args & log
 import argparse
@@ -23,7 +23,7 @@ from urlparse import urlparse, parse_qs
 
 # global var
 scriptName='watdl.py'
-scriptVersion='0.9.4.8'
+scriptVersion='0.9.4.9'
 
 # programmes externes utilisés
 ffmpegEx='ffmpeg'               # ou avconv
@@ -38,8 +38,7 @@ KEY = "Genuine Adobe Flash Player 001"
 urlOpenTimeout = 30
 
 listeUserAgents = [
-    'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:22.0) Gecko/20100101 Firefox/22.0' ] #,
-listeUserAgents2=[
+    'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:22.0) Gecko/20100101 Firefox/22.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:24.0) Gecko/20100101 Firefox/24.0',
     'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0',
     'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:23.0) Gecko/20131011 Firefox/23.0',
@@ -118,7 +117,7 @@ def get_wat(id, HDFlag, referUrl, sitepage):
     while(len(timesec)<8):
         timesec = "0"+timesec
     token = md5.new(
-        "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564" +
+        "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba009l2564" +
         wat_url + str(id) + timesec).hexdigest()
     # token = md5.new(
     #     "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba00912564" +
